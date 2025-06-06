@@ -5,448 +5,405 @@
 
 namespace bmstu
 {
-
-template <typename Type>
+template <typename T>
 class simple_vector
 {
    public:
 	class iterator
 	{
 	   public:
-		using iterator_category = std::random_access_iterator_tag;
-		using value_type = Type;
-		using pointer = Type*;
-		using reference = Type&;
+		using iterator_category = std::contiguous_iterator_tag;
+		using value_type = T;
+		using pointer = T*;
+		using reference = T&;
 		using difference_type = std::ptrdiff_t;
 
 		iterator() = default;
-		explicit iterator(pointer ptr) : current_ptr_(ptr) {}
 
-		reference operator*() const noexcept { return *current_ptr_; }
-		pointer operator->() const noexcept { return current_ptr_; }
+		iterator(const iterator& other) = default;
 
+		iterator(std::nullptr_t) noexcept : ptr_(nullptr) {}
+
+		iterator(iterator&& other) noexcept : ptr_(other.ptr_)
+		{
+			other.ptr_ = nullptr;
+		}
+
+		explicit iterator(pointer ptr) : ptr_(ptr) {}
+
+		reference operator*() const { return *ptr_; }
+
+		pointer operator->() const { return ptr_; }
+
+		friend pointer to_address(const iterator& it) noexcept
+		{
+			return it.ptr_;
+		}
+
+		iterator& operator=(const iterator& other) = default;
+
+		iterator& operator=(iterator&& other) noexcept
+		{
+			ptr_ = other.ptr_;
+			other.ptr_ = nullptr;
+			return *this;
+		}
+
+#pragma region Operators
 		iterator& operator++() noexcept
 		{
-			++current_ptr_;
+			++ptr_;
 			return *this;
 		}
-		iterator operator++(int) noexcept
-		{
-			iterator temp = *this;
-			++current_ptr_;
-			return temp;
-		}
+
 		iterator& operator--() noexcept
 		{
-			--current_ptr_;
+			--ptr_;
 			return *this;
 		}
+
+		iterator operator++(int) noexcept
+		{
+			iterator old =
+				*this;	// old - старое состояние, которое мы должны вернуть
+			++ptr_;
+			return old;
+		}
+
 		iterator operator--(int) noexcept
 		{
-			iterator temp = *this;
-			--current_ptr_;
-			return temp;
+			iterator old = *this;
+			--ptr_;
+			return old;
 		}
 
-		iterator operator+(difference_type n) const noexcept
+		explicit operator bool() const noexcept { return ptr_ != nullptr; }
+
+		friend bool operator==(const iterator& lhs,
+							   const iterator& rhs) noexcept
 		{
-			return iterator(current_ptr_ + n);
-		}
-		iterator operator-(difference_type n) const noexcept
-		{
-			return iterator(current_ptr_ - n);
-		}
-		difference_type operator-(const iterator& other) const noexcept
-		{
-			return current_ptr_ - other.current_ptr_;
+			return lhs.ptr_ == rhs.ptr_;
 		}
 
-		iterator& operator+=(difference_type n) noexcept
+		friend bool operator==(const iterator& lhs, std::nullptr_t) noexcept
 		{
-			current_ptr_ += n;
-			return *this;
-		}
-		iterator& operator-=(difference_type n) noexcept
-		{
-			current_ptr_ -= n;
-			return *this;
-		}
-
-		bool operator==(const iterator& other) const noexcept
-		{
-			return current_ptr_ == other.current_ptr_;
-		}
-		bool operator!=(const iterator& other) const noexcept
-		{
-			return current_ptr_ != other.current_ptr_;
-		}
-
-		bool operator==(std::nullptr_t) const noexcept
-		{
-			return current_ptr_ == nullptr;
-		}
-		bool operator!=(std::nullptr_t) const noexcept
-		{
-			return current_ptr_ != nullptr;
-		}
-		friend bool operator==(std::nullptr_t, const iterator& it) noexcept
-		{
-			return it.current_ptr_ == nullptr;
-		}
-		friend bool operator!=(std::nullptr_t, const iterator& it) noexcept
-		{
-			return it.current_ptr_ != nullptr;
+			return lhs.ptr_ == nullptr;
 		}
 
 		iterator& operator=(std::nullptr_t) noexcept
 		{
-			current_ptr_ = nullptr;
+			ptr_ = nullptr;
 			return *this;
 		}
 
-		iterator& operator=(const iterator& other) noexcept
+		friend bool operator==(std::nullptr_t, const iterator& rhs)
 		{
-			current_ptr_ = other.current_ptr_;
+			return rhs.ptr_ == nullptr;
+		}
+
+		friend bool operator!=(const iterator& lhs, const iterator& rhs)
+		{
+			return lhs.ptr_ != rhs.ptr_;
+		}
+
+		iterator operator+(const difference_type& n) const noexcept
+		{
+			return iterator(ptr_ + n);
+		}
+
+		iterator& operator+=(const difference_type& n) noexcept
+		{
+			ptr_ += n;
 			return *this;
 		}
 
-		explicit operator bool() const noexcept
+		iterator operator-(const difference_type& n) const noexcept
 		{
-			return current_ptr_ != nullptr;
+			return iterator(ptr_ - n);
 		}
 
+		iterator& operator-=(const difference_type& n) noexcept
+		{
+			ptr_ -= n;
+			return *this;
+		}
+
+		friend difference_type operator-(const iterator& end,
+										 const iterator& begin) noexcept
+		{
+			return end.ptr_ - begin.ptr_;
+		}
+
+#pragma endregion
 	   private:
-		pointer current_ptr_ = nullptr;
+		pointer ptr_ = nullptr;
 	};
-
-	using const_iterator = const iterator;
 
 	simple_vector() noexcept = default;
 
-	explicit simple_vector(size_t count)
-		: elements_(count), element_count_(count), capacity_(count)
-	{
-		for (size_t i = 0; i < element_count_; ++i)
-		{
-			elements_[i] = Type();
-		}
-	}
+	~simple_vector() = default;
 
-	simple_vector(size_t count, const Type& value)
-		: elements_(count), element_count_(count), capacity_(count)
-	{
-		for (auto it = begin(); it != end(); ++it)
-		{
-			*it = value;
-		}
-	}
-
-	simple_vector(std::initializer_list<Type> init)
-		: elements_(init.size()),
-		  element_count_(init.size()),
+	simple_vector(std::initializer_list<T> init) noexcept
+		: data_(new T[init.size()]),  //Выделяем память под динамический массив
+		  size_(init.size()),  // копируем size из init
 		  capacity_(init.size())
 	{
-		auto it = begin();
-		for (const Type& item : init)
-		{
-			*it++ = item;
-		}
+		std::copy(init.begin(), init.end(), data_.get());
 	}
 
 	simple_vector(const simple_vector& other)
-		: elements_(other.element_count_),
-		  element_count_(other.element_count_),
-		  capacity_(other.element_count_)
+		: data_(other.size()), size_(other.size()), capacity_(other.size())
 	{
-		auto it = begin();
-		auto other_it = other.begin();
-		for (; other_it != other.end(); ++it, ++other_it)
-		{
-			*it = *other_it;
-		}
+		std::copy(other.begin(), other.end(), data_.get());
 	}
 
 	simple_vector(simple_vector&& other) noexcept { swap(other); }
 
-	~simple_vector() = default;
-
-	simple_vector& operator=(const simple_vector& right)
+	simple_vector& operator=(const simple_vector& other)
 	{
-		if (this != &right)
+		simple_vector(other).swap(*this);
+		return *this;
+	}
+
+	simple_vector(size_t size, const T& value = T{})
+		: data_(size), size_(size), capacity_(size)
+	{
+		for (size_t num = 0; num < size_; num++)
 		{
-			if (right.empty())
-			{
-				clear();
-				return *this;
-			}
-
-			simple_vector temp(right);
-			swap(temp);
+			data_[num] = value;
 		}
-		return *this;
 	}
+	iterator begin() noexcept { return iterator(data_.get()); }
 
-	simple_vector& operator=(simple_vector&& right) noexcept
-	{
-		swap(right);
-		return *this;
-	}
+	iterator end() noexcept { return iterator(data_.get() + size_); }
 
-	iterator begin() noexcept { return iterator(elements_.get()); }
-	iterator end() noexcept
-	{
-		return iterator(elements_.get() + element_count_);
-	}
-	const_iterator begin() const noexcept { return iterator(elements_.get()); }
+	using const_iterator = iterator;
+
+	const_iterator begin() const noexcept { return iterator(data_.get()); }
+
 	const_iterator end() const noexcept
 	{
-		return iterator(elements_.get() + element_count_);
-	}
-	const_iterator cbegin() const noexcept { return iterator(elements_.get()); }
-	const_iterator cend() const noexcept
-	{
-		return iterator(elements_.get() + element_count_);
+		return iterator(data_.get() + size_);
 	}
 
-	Type& operator[](size_t index) noexcept { return elements_[index]; }
-	const Type& operator[](size_t index) const noexcept
+	typename iterator::reference operator[](size_t index) noexcept
 	{
-		return elements_[index];
+		return data_[index];
 	}
-	Type& at(size_t index)
+
+	typename const_iterator::reference operator[](size_t index) const noexcept
 	{
-		if (index >= element_count_)
+		return data_[index];
+	}
+	typename iterator::reference at(size_t index)
+	{
+		if (index >= size_)
+		{
 			throw std::out_of_range("Index out of range");
-		return elements_[index];
+		}
+		return data_[index];
 	}
 
-	const Type& at(size_t index) const
+	typename const_iterator::reference at(size_t index) const
 	{
-		if (index >= element_count_)
+		if (index >= size_)
+		{
 			throw std::out_of_range("Index out of range");
-		return elements_[index];
+		}
+		return data_[index];
 	}
 
-	size_t size() const noexcept { return element_count_; }
+	size_t size() const noexcept { return size_; }
+
 	size_t capacity() const noexcept { return capacity_; }
-	bool empty() const noexcept { return element_count_ == 0; }
 
 	void swap(simple_vector& other) noexcept
 	{
-		elements_.swap(other.elements_);
-		std::swap(element_count_, other.element_count_);
+		data_.swap(other.data_);
+		std::swap(size_, other.size_);
 		std::swap(capacity_, other.capacity_);
 	}
 
-	friend void swap(simple_vector<Type>& left, simple_vector<Type>& right)
+	friend void swap(simple_vector& lhs, simple_vector& rhs) noexcept
 	{
-		left.swap(right);
+		lhs.swap(rhs);
 	}
 
-	void reserve(size_t new_capacity)
+	void reserve(size_t new_cap)
 	{
-		if (new_capacity > capacity_)
+		if (new_cap > capacity_)
 		{
-			array_ptr<Type> new_elements(new_capacity);
-			for (size_t i = 0; i < element_count_; ++i)
+			array_ptr<T> new_data(new_cap);
+			for (size_t i = 0; i < size_; ++i)
 			{
-				new_elements[i] = std::move(elements_[i]);
+				new_data[i] = std::move(data_[i]);
 			}
-			elements_.swap(new_elements);
-			capacity_ = new_capacity;
+			data_.swap(new_data);
+			capacity_ = new_cap;
 		}
 	}
 
 	void resize(size_t new_size)
 	{
-		if (new_size > capacity_)
 		{
-			size_t new_capacity = std::max(new_size, capacity_ * 2);
-			reserve(new_capacity);
+			if (new_size > capacity_)
+			{
+				size_t new_capacity = std::max(capacity_ * 2, new_size);
+				reserve(new_capacity);
+			}
+			if (size_ > new_size)
+			{
+				size_ = new_size;
+				return;
+			}
+			for (size_t i = size_; i < new_size; ++i)
+			{
+				data_[i] = T{};
+			}
+			size_ = new_size;
 		}
-		if (element_count_ > new_size)
-		{
-			element_count_ = new_size;
-			return;
-		}
-		for (auto it = end(); it != begin() + new_size; ++it)
-		{
-			*it = Type{};
-		}
-		element_count_ = new_size;
 	}
 
-	void push_back(const Type& value)
+	iterator insert(const_iterator where,  T&& value)
 	{
-		Type temp_value = value;
-
-		if (element_count_ >= capacity_)
+		size_t offset = where - begin();
+		if (size_ >= capacity_)
 		{
-			size_t new_capacity = capacity_ ? capacity_ * 2 : 1;
-			array_ptr<Type> new_elements(new_capacity);
-
-			for (size_t i = 0; i < element_count_; ++i)
+			size_t new_cap = capacity_ ? capacity_ * 2 : 1;
+			array_ptr<T> new_data(new_cap);
+			for (size_t i = 0; i < offset; ++i)
 			{
-				new_elements[i] = std::move(elements_[i]);
+				new_data[i] = std::move(data_[i]);
 			}
-			new_elements[element_count_] = std::move(temp_value);
-
-			elements_.swap(new_elements);
-			capacity_ = new_capacity;
+			new_data[offset] = std::move(value);
+			for (size_t i = offset; i < size_; ++i)
+			{
+				new_data[i + 1] = std::move(data_[i]);
+			}
+			data_.swap(new_data);
+			capacity_ = new_cap;
 		}
 		else
 		{
-			elements_[element_count_] = std::move(temp_value);
+			for (size_t i = size_; i > offset; --i)
+			{
+				data_[i] = std::move(data_[i - 1]);
+			}
+			data_[offset] = std::move(value);
 		}
-		++element_count_;
+		++size_;
+		return begin() + offset;
 	}
 
-	void push_back(Type&& value)
+	iterator insert(const_iterator where, const T& value)
 	{
-		if (element_count_ >= capacity_)
-		{
-			size_t new_capacity = capacity_ ? capacity_ * 2 : 1;
-			array_ptr<Type> new_elements(new_capacity);
-			for (size_t i = 0; i < element_count_; ++i)
-			{
-				new_elements[i] = std::move(elements_[i]);
-			}
-			new_elements[element_count_] = std::move(value);
-			elements_.swap(new_elements);
-			capacity_ = new_capacity;
-			++element_count_;
-		}
-		else
-		{
-			elements_[element_count_++] = std::move(value);
-		}
+		T tmp = value;
+		return insert(where, std::move(tmp));
 	}
+
+	void push_back(T&& value) { insert(end(), std::move(value)); }
+
+	void clear() noexcept { size_ = 0; }
+
+	void push_back(const T& value)
+	{
+		T tmp = value;
+		push_back(std::move(tmp));
+	}
+
+	bool empty() const noexcept { return size_ == 0; }
 
 	void pop_back()
 	{
-		if (element_count_ > 0)
+		if (size_ > 0)
 		{
-			--element_count_;
+			--size_;
 		}
 	}
 
-	iterator insert(const_iterator pos, const Type& value)
+	friend bool operator==(const simple_vector& lhs, const simple_vector& rhs)
 	{
-		size_t offset = pos - begin();
-		if (element_count_ >= capacity_)
+		if (lhs.size() != rhs.size())
 		{
-			size_t new_capacity = capacity_ ? capacity_ * 2 : 1;
-			array_ptr<Type> new_elements(new_capacity);
-			for (size_t i = 0; i < offset; ++i)
-			{
-				new_elements[i] = std::move(elements_[i]);
-			}
-			new_elements[offset] = value;
-			for (size_t i = offset; i < element_count_; ++i)
-			{
-				new_elements[i + 1] = std::move(elements_[i]);
-			}
-			elements_.swap(new_elements);
-			capacity_ = new_capacity;
-		}
-		else
-		{
-			for (size_t i = element_count_; i > offset; --i)
-			{
-				elements_[i] = std::move(elements_[i - 1]);
-			}
-			elements_[offset] = value;
-		}
-		++element_count_;
-		return iterator(elements_.get() + offset);
-	}
-
-	iterator erase(iterator pos)
-	{
-		size_t offset = pos - begin();
-		for (size_t i = offset; i < element_count_ - 1; ++i)
-		{
-			elements_[i] = std::move(elements_[i + 1]);
-		}
-		--element_count_;
-		return iterator(elements_.get() + offset);
-	}
-
-	void clear() noexcept { element_count_ = 0; }
-
-	friend bool operator==(const simple_vector& left,
-						   const simple_vector& right)
-	{
-		if (left.element_count_ != right.element_count_)
 			return false;
-		for (size_t i = 0; i < left.element_count_; ++i)
+		}
+		for (size_t i = 0; i < lhs.size(); ++i)
 		{
-			if (left.elements_[i] != right.elements_[i])
+			if (lhs.data_[i] != rhs.data_[i])
+			{
 				return false;
+			}
 		}
 		return true;
 	}
 
-	friend bool operator!=(const simple_vector& left,
-						   const simple_vector& right)
+	friend bool operator!=(const simple_vector& lhs, const simple_vector& rhs)
 	{
-		return !(left == right);
+		return !(lhs == rhs);
+	}
+
+	friend auto operator<=>(const simple_vector& lhs, const simple_vector& rhs)
+	{
+		auto it1 = lhs.begin();
+		auto it2 = rhs.begin();
+		const auto end1 = lhs.end();
+		const auto end2 = rhs.end();
+		while (it1 != end1 && it2 != end2)
+		{
+			if (auto cmp = *it1 <=> *it2; cmp != 0)
+			{
+				return cmp;
+			}
+			++it1;
+			++it2;
+		}
+		return lhs.size() <=> rhs.size();
 	}
 
 	friend std::ostream& operator<<(std::ostream& os, const simple_vector& vec)
 	{
 		os << "[ ";
-		for (size_t i = 0; i < vec.element_count_; ++i)
+		for (size_t i = 0; i < vec.size_; ++i)
 		{
-			os << vec.elements_[i];
-			if (i != vec.element_count_ - 1)
+			os << vec.data_[i];
+			if (i != vec.size_ - 1)
 				os << ", ";
 		}
 		os << " ]";
 		return os;
 	}
-
-	friend bool operator<(const simple_vector& left, const simple_vector& right)
+	iterator erase(iterator where)
 	{
-		auto left_begin = left.begin();
-		auto right_begin = right.begin();
-		auto left_end = left.end();
-		auto right_end = right.end();
-		for (; (left_begin != left_end) && (right_begin != right_end);
-			 ++left_begin, ++right_begin)
+		size_t offset = where - begin();
+		for (size_t i = offset; i < size_ - 1; ++i)
 		{
-			if (*left_begin < *right_begin)
-			{
-				return true;
-			}
-			if (*left_begin > *right_begin)
-			{
-				return false;
-			}
+			data_[i] = std::move(data_[i + 1]);
 		}
-		return (left_begin == left_end) && (right_begin != right_end);
-	}
-	friend bool operator>(const simple_vector& left, const simple_vector& right)
-	{
-		return !(left <= right);
-	}
-
-	friend bool operator<=(const simple_vector& left,
-						   const simple_vector& right)
-	{
-		return (left < right || left == right);
-	}
-
-	friend bool operator>=(const simple_vector& left,
-						   const simple_vector& right)
-	{
-		return !(left < right);
+		--size_;
+		return begin() + offset;
 	}
 
    private:
-	array_ptr<Type> elements_;
-	size_t element_count_ = 0;
+	static bool alphabet_compare(const simple_vector<T>& lhs,
+								 const simple_vector<T>& rhs)
+	{
+		auto lhs_it = lhs.begin();
+		auto rhs_it = rhs.begin();
+		auto lhs_end = lhs.end();
+		auto rhs_end = rhs.end();
+		while (lhs_it != lhs_end && rhs_it != rhs_end)
+		{
+			if (*lhs_it != *rhs_it)
+			{
+				return *lhs_it < *rhs_it;
+			}
+			++lhs_it;
+			++rhs_it;
+		}
+		return lhs.size() < rhs.size();
+	}
+	array_ptr<T> data_;
+	size_t size_ = 0;
 	size_t capacity_ = 0;
 };
-
 }  // namespace bmstu
